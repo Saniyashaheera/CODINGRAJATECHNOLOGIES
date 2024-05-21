@@ -1,0 +1,231 @@
+import java.sql.*;
+import java.util.Scanner;
+
+public class LibraryManagementSystem {
+
+    // Database connection setup
+    private static final String URL = "jdbc:sqlite:library.db";
+
+    public static Connection connect() {
+        Connection conn = null;
+        try {
+            conn = DriverManager.getConnection(URL);
+            System.out.println("Connection to SQLite has been established.");
+        } catch (SQLException e) {
+            System.out.println(e.getMessage());
+        }
+        return conn;
+    }
+
+    // Book management
+    public static boolean addBook(String title, String author, String genre, boolean isAvailable) {
+        String sql = "INSERT INTO Books(title, author, genre, isAvailable) VALUES(?, ?, ?, ?)";
+        try (Connection conn = connect();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, title);
+            pstmt.setString(2, author);
+            pstmt.setString(3, genre);
+            pstmt.setBoolean(4, isAvailable);
+            pstmt.executeUpdate();
+            return true;
+        } catch (SQLException e) {
+            System.out.println(e.getMessage());
+        }
+        return false;
+    }
+
+    public static void displayBooks() {
+        String sql = "SELECT * FROM Books";
+        try (Connection conn = connect();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                System.out.println("Book ID: " + rs.getInt("book_id") + 
+                                   ", Title: " + rs.getString("title") + 
+                                   ", Author: " + rs.getString("author") + 
+                                   ", Genre: " + rs.getString("genre") + 
+                                   ", Available: " + rs.getBoolean("isAvailable"));
+            }
+        } catch (SQLException e) {
+            System.out.println(e.getMessage());
+        }
+    }
+
+    // Patron records
+    public static boolean addPatron(String name, String contactInfo) {
+        String sql = "INSERT INTO Patrons(name, contactInfo) VALUES(?, ?)";
+        try (Connection conn = connect();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, name);
+            pstmt.setString(2, contactInfo);
+            pstmt.executeUpdate();
+            return true;
+        } catch (SQLException e) {
+            System.out.println(e.getMessage());
+        }
+        return false;
+    }
+
+    public static void displayPatrons() {
+        String sql = "SELECT * FROM Patrons";
+        try (Connection conn = connect();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                System.out.println("Patron ID: " + rs.getInt("patron_id") + 
+                                   ", Name: " + rs.getString("name") + 
+                                   ", Contact Info: " + rs.getString("contactInfo"));
+            }
+        } catch (SQLException e) {
+            System.out.println(e.getMessage());
+        }
+    }
+
+    // Borrowing system
+    public static boolean borrowBook(int bookId, int patronId) {
+        if (updateBookAvailability(bookId, false)) {
+            String sql = "INSERT INTO BorrowingRecords(book_id, patron_id, borrowDate, returnDate, fine) VALUES(?, ?, datetime('now'), NULL, 0)";
+            try (Connection conn = connect();
+                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setInt(1, bookId);
+                pstmt.setInt(2, patronId);
+                pstmt.executeUpdate();
+                return true;
+            } catch (SQLException e) {
+                System.out.println(e.getMessage());
+            }
+        }
+        return false;
+    }
+
+    public static boolean returnBook(int bookId, int patronId) {
+        String sql = "UPDATE BorrowingRecords SET returnDate = datetime('now'), fine = ? WHERE book_id = ? AND patron_id = ? AND returnDate IS NULL";
+        try (Connection conn = connect();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            int fine = calculateFine(bookId, patronId);
+            pstmt.setInt(1, fine);
+            pstmt.setInt(2, bookId);
+            pstmt.setInt(3, patronId);
+            pstmt.executeUpdate();
+            updateBookAvailability(bookId, true);
+            return true;
+        } catch (SQLException e) {
+            System.out.println(e.getMessage());
+        }
+        return false;
+    }
+
+    // Fine calculation
+    public static int calculateFine(int bookId, int patronId) {
+        String sql = "SELECT julianday('now') - julianday(borrowDate) AS daysBorrowed FROM BorrowingRecords WHERE book_id = ? AND patron_id = ? AND returnDate IS NULL";
+        try (Connection conn = connect();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, bookId);
+            pstmt.setInt(2, patronId);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                int daysBorrowed = rs.getInt("daysBorrowed");
+                int fine = Math.max(0, daysBorrowed - 14) * 1; // 1 unit fine per day after 14 days
+                return fine;
+            }
+        } catch (SQLException e) {
+            System.out.println(e.getMessage());
+        }
+        return 0;
+    }
+
+    // Search functionality
+    public static void searchBooks(String keyword) {
+        String sql = "SELECT * FROM Books WHERE title LIKE ? OR author LIKE ? OR genre LIKE ?";
+        try (Connection conn = connect();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, "%" + keyword + "%");
+            pstmt.setString(2, "%" + keyword + "%");
+            pstmt.setString(3, "%" + keyword + "%");
+            ResultSet rs = pstmt.executeQuery();
+            while (rs.next()) {
+                System.out.println("Book ID: " + rs.getInt("book_id") + 
+                                   ", Title: " + rs.getString("title") + 
+                                   ", Author: " + rs.getString("author") + 
+                                   ", Genre: " + rs.getString("genre") + 
+                                   ", Available: " + rs.getBoolean("isAvailable"));
+            }
+        } catch (SQLException e) {
+            System.out.println(e.getMessage());
+        }
+    }
+
+    // Reports
+    public static void generateReport() {
+        String sql = "SELECT * FROM Books";
+        try (Connection conn = connect();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            System.out.println("Books Report:");
+            while (rs.next()) {
+                System.out.println("Book ID: " + rs.getInt("book_id") + 
+                                   ", Title: " + rs.getString("title") + 
+                                   ", Author: " + rs.getString("author") + 
+                                   ", Genre: " + rs.getString("genre") + 
+                                   ", Available: " + rs.getBoolean("isAvailable"));
+            }
+        } catch (SQLException e) {
+            System.out.println(e.getMessage());
+        }
+
+        sql = "SELECT * FROM BorrowingRecords";
+        try (Connection conn = connect();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            System.out.println("Borrowing Records Report:");
+            while (rs.next()) {
+                System.out.println("Record ID: " + rs.getInt("record_id") + 
+                                   ", Book ID: " + rs.getInt("book_id") + 
+                                   ", Patron ID: " + rs.getInt("patron_id") + 
+                                   ", Borrow Date: " + rs.getString("borrowDate") + 
+                                   ", Return Date: " + rs.getString("returnDate") + 
+                                   ", Fine: " + rs.getInt("fine"));
+            }
+        } catch (SQLException e) {
+            System.out.println(e.getMessage());
+        }
+    }
+
+    // Helper methods
+    private static boolean updateBookAvailability(int bookId, boolean isAvailable) {
+        String sql = "UPDATE Books SET isAvailable = ? WHERE book_id = ?";
+        try (Connection conn = connect();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setBoolean(1, isAvailable);
+            pstmt.setInt(2, bookId);
+            pstmt.executeUpdate();
+            return true;
+        } catch (SQLException e) {
+            System.out.println(e.getMessage());
+        }
+        return false;
+    }
+
+    // Main method to demonstrate functionality
+    public static void main(String[] args) {
+        // Sample data
+        addBook("1984", "George Orwell", "Dystopian", true);
+        addBook("To Kill a Mockingbird", "Harper Lee", "Fiction", true);
+        addPatron("John Doe", "john.doe@example.com");
+        addPatron("Jane Smith", "jane.smith@example.com");
+
+        // Borrow and return a book
+        borrowBook(1, 1);  // John Doe borrows "1984"
+        returnBook(1, 1);  // John Doe returns "1984"
+
+        // Display all books and patrons
+        displayBooks();
+        displayPatrons();
+
+        // Search for books
+        searchBooks("George");
+
+        // Generate reports
+        generateReport();
+    }
+}
